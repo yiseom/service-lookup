@@ -1319,32 +1319,54 @@ const RAW = `55\tcat1_과외
 1519\t(긴급)가정집화장실누수
 1520\t(긴급)도어락고장`;
 
-const idToName = {}, nameToId = {};
+// idToNames: { "55": ["cat1_과외", "발레레슨"], ... }
+// nameToId:  { "cat1_과외": "55", ... }
+const idToNames = {}, nameToId = {};
 RAW.split('\n').forEach(line => {
   const parts = line.split('\t');
   if (parts.length >= 2) {
     const id = parts[0].trim(), name = parts[1].trim();
     if (id && name) {
-      idToName[id] = name;
+      if (!idToNames[id]) idToNames[id] = [];
+      idToNames[id].push(name);
       nameToId[name.toLowerCase()] = id;
     }
   }
 });
 
+// 텍스트 검색용 플랫 리스트: [{id, name}, ...]
+const allPairs = [];
+Object.entries(idToNames).forEach(([id, names]) => {
+  names.forEach(name => allPairs.push({ id, name }));
+});
+
 function search(q) {
   q = q.trim();
   if (!q) return '검색어를 입력해주세요.';
+
+  // 숫자 → 이름(들)
   if (/^\d+$/.test(q)) {
-    const name = idToName[q];
-    return name ? `🔍 ID ${q} → ${name}` : `❌ ID ${q}에 해당하는 항목이 없습니다.`;
+    const names = idToNames[q];
+    if (!names) return `❌ ID ${q}에 해당하는 항목이 없습니다.`;
+    if (names.length === 1) return `🔍 ID ${q} → ${names[0]}`;
+    return `🔍 ID ${q} → ${names.length}건:\n${names.map(n => `• ${n}`).join('\n')}`;
   }
+
+  // 텍스트 → ID (완전일치 우선)
   const ql = q.toLowerCase();
-  const exact = nameToId[ql];
-  if (exact) return `🔍 "${q}" → ID: ${exact}`;
-  const matches = Object.entries(idToName).filter(([,n]) => n.toLowerCase().includes(ql));
+  const exactId = nameToId[ql];
+  if (exactId) {
+    const names = idToNames[exactId];
+    const others = names.filter(n => n.toLowerCase() !== ql);
+    if (others.length === 0) return `🔍 "${q}" → ID: ${exactId}`;
+    return `🔍 "${q}" → ID: ${exactId}\n(같은 ID의 다른 항목: ${others.join(', ')})`;
+  }
+
+  // 부분 검색
+  const matches = allPairs.filter(p => p.name.toLowerCase().includes(ql));
   if (!matches.length) return `❌ "${q}" 포함 항목이 없습니다.`;
-  if (matches.length === 1) return `🔍 "${matches[0][1]}" → ID: ${matches[0][0]}`;
-  const lines = matches.slice(0, 20).map(([id, n]) => `• ${id}\t${n}`).join('\n');
+  if (matches.length === 1) return `🔍 "${matches[0].name}" → ID: ${matches[0].id}`;
+  const lines = matches.slice(0, 20).map(p => `• ${p.id}\t${p.name}`).join('\n');
   const more = matches.length > 20 ? `\n...외 ${matches.length - 20}건 더 있음` : '';
   return `🔍 "${q}" 포함 ${matches.length}건:\n${lines}${more}`;
 }
